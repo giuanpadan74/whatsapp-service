@@ -1,16 +1,26 @@
-FROM node:18-alpine
+FROM node:22.13.0-alpine AS build
 
 WORKDIR /app
 
 COPY package*.json ./
-
-RUN npm ci --only=production
+RUN npm ci
 
 COPY . .
 RUN npm run build
 
-EXPOSE 3001
+FROM node:22.13.0-alpine AS runtime
 
-USER node
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY package*.json ./
+RUN npm ci --omit=dev
+
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/.env.example ./.env.example
+
+RUN mkdir -p sessions logs uploads
+
+EXPOSE 3001
 
 CMD ["node", "dist/index.js"]
