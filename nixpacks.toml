@@ -2,6 +2,9 @@
 NIXPACKS_NODE_VERSION = "22.13.0"
 NPM_CONFIG_PRODUCTION = "false"
 
+[phases.setup]
+aptPkgs = ["...", "curl"]
+
 [phases.install]
 cmds = ["npm ci"]
 
