@@ -1,17 +1,14 @@
 import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export const config = {
   port: parseInt(process.env.PORT || '3001', 10),
   host: process.env.HOST || '0.0.0.0',
   
   paths: {
-    sessions: path.join(__dirname, '../../sessions'),
-    auth: path.join(__dirname, '../../sessions/auth'),
-    logs: path.join(__dirname, '../../logs'),
-    uploads: path.join(__dirname, '../../uploads'),
+    sessions: path.join(process.cwd(), 'sessions'),
+    auth: path.join(process.cwd(), 'sessions', 'auth'),
+    logs: path.join(process.cwd(), 'logs'),
+    uploads: path.join(process.cwd(), 'uploads'),
   },
   
   cors: {

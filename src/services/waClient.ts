@@ -1,39 +1,42 @@
-import { createWASocket, AnyWASocket, DisconnectReason, proto } from '@whiskeysockets/baileys';
+import {
+  Browsers,
+  DisconnectReason,
+  WASocket,
+  makeWASocket,
+  useMultiFileAuthState,
+} from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import QRCode from 'qrcode';
 import { AgentSession } from '../types/index.js';
 import { sessionStore } from './sessionStore.js';
 import { config } from '../config/index.js';
-import fs from 'fs/promises';
 import path from 'path';
 
-class WAClientManager {
-  private clients: Map<string, AnyWASocket> = new Map();
-  private qrCallbacks: Map<string, (qr: string, expiresAt: string) => void> = new Map();
+type QrState = { qrCode: string; expiresAt: string } | null;
 
-  async createClient(session: AgentSession): Promise<AnyWASocket> {
+class WAClientManager {
+  private clients: Map<string, WASocket> = new Map();
+  private qrBySessionId: Map<string, QrState> = new Map();
+
+  async createClient(session: AgentSession): Promise<WASocket> {
     const existingClient = this.clients.get(session.sessionId);
     if (existingClient) {
       return existingClient;
     }
 
-    const authPath = path.join(config.paths.auth, `${session.sessionId}.json`);
-    
-    let authState: any = {};
-    try {
-      const authData = await fs.readFile(authPath, 'utf-8');
-      authState = JSON.parse(authData);
-    } catch {}
+    const authDir = path.join(config.paths.auth, session.sessionId);
+    const { state, saveCreds } = await useMultiFileAuthState(authDir);
 
-    const sock = createWASocket({
-      auth: authState,
+    const sock = makeWASocket({
+      auth: state,
       printQRInTerminal: true,
+      browser: Browsers.ubuntu('GAR'),
       defaultQueryTimeoutMs: 60000,
     });
 
     this.clients.set(session.sessionId, sock);
 
-    sock.ev.on('connection.update', async (update) => {
+    sock.ev.on('connection.update', async (update: any) => {
       const { connection, lastDisconnect, qr } = update;
 
       if (qr) {
@@ -42,11 +45,7 @@ class WAClientManager {
           const expiresAt = new Date(Date.now() + config.qrCodeExpirationMs).toISOString();
           
           sessionStore.updateSessionStatus(session.sessionId, 'waiting_qr');
-          
-          const callback = this.qrCallbacks.get(session.sessionId);
-          if (callback) {
-            callback(qrDataUrl, expiresAt);
-          }
+          this.qrBySessionId.set(session.sessionId, { qrCode: qrDataUrl, expiresAt });
         } catch (err) {
           console.error('[WAClient] Errore generazione QR:', err);
         }
@@ -59,7 +58,7 @@ class WAClientManager {
           console.log(`[WAClient] Sessione ${session.sessionId} disconnessa`);
           sessionStore.updateSessionStatus(session.sessionId, 'disconnected');
           this.removeClient(session.sessionId);
-        } else if (statusCode !== DisconnectReason.closeTab) {
+        } else {
           console.log(`[WAClient] Riconnessione per ${session.sessionId}...`);
           sessionStore.updateSessionStatus(session.sessionId, 'connecting');
           setTimeout(() => this.reconnect(session), 5000);
@@ -74,17 +73,11 @@ class WAClientManager {
           phone,
           connectedAt: new Date().toISOString() 
         });
+        this.qrBySessionId.set(session.sessionId, null);
       }
     });
 
-    sock.ev.on('creds.update', async (creds) => {
-      try {
-        await fs.mkdir(config.paths.auth, { recursive: true });
-        await fs.writeFile(authPath, JSON.stringify(creds));
-      } catch (err) {
-        console.error('[WAClient] Errore salvataggio credenziali:', err);
-      }
-    });
+    sock.ev.on('creds.update', saveCreds);
 
     return sock;
   }
@@ -93,11 +86,11 @@ class WAClientManager {
     await this.createClient(session);
   }
 
-  getClient(sessionId: string): AnyWASocket | undefined {
+  getClient(sessionId: string): WASocket | undefined {
     return this.clients.get(sessionId);
   }
 
-  getClientByAgentId(agentId: string): AnyWASocket | undefined {
+  getClientByAgentId(agentId: string): WASocket | undefined {
     const session = sessionStore.getSessionByAgentId(agentId);
     if (!session) return undefined;
     return this.clients.get(session.sessionId);
@@ -106,48 +99,28 @@ class WAClientManager {
   removeClient(sessionId: string): void {
     const client = this.clients.get(sessionId);
     if (client) {
-      client.end();
+      client.end(new Error('closed'));
       this.clients.delete(sessionId);
     }
-    this.qrCallbacks.delete(sessionId);
+    this.qrBySessionId.delete(sessionId);
   }
 
-  onQRCode(sessionId: string, callback: (qr: string, expiresAt: string) => void): void {
-    this.qrCallbacks.set(sessionId, callback);
+  getQRCode(sessionId: string): QrState {
+    return this.qrBySessionId.get(sessionId) ?? null;
   }
 
   async sendTextStatus(
     agentId: string,
     text: string,
-    backgroundColor: string,
-    textColor: string
+    _backgroundColor: string,
+    _textColor: string
   ): Promise<string> {
     const client = this.getClientByAgentId(agentId);
     if (!client || !client.user) {
       throw new Error('session_not_connected');
     }
-
-    const message = proto.Message.createMessage({
-      imageMessage: {
-        url: '',
-        mimetype: 'image/png',
-        fileLength: '0',
-        caption: text,
-        contextInfo: {
-          isForwarded: true,
-          forwardingScore: 0,
-          isForwardedFromMe: false,
-        },
-      },
-    });
-
-    const id = `status_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-    
-    await client.relayMessage('status@broadcast', message, {
-      messageId: id,
-    });
-
-    return id;
+    const result = await client.sendMessage('status@broadcast', { text });
+    return result?.key?.id || `status_${Date.now()}`;
   }
 
   async sendMediaStatus(
@@ -161,26 +134,13 @@ class WAClientManager {
       throw new Error('session_not_connected');
     }
 
-    const id = `status_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const payload =
+      mimeType === 'video/mp4'
+        ? ({ video: mediaBuffer, mimetype: mimeType, caption } as const)
+        : ({ image: mediaBuffer, mimetype: mimeType, caption } as const);
 
-    const uploadResult = await client.uploadMedia(mediaBuffer, {
-      isRemoteUrl: false,
-    });
-
-    const message = proto.Message.createMessage({
-      imageMessage: {
-        url: uploadResult.url,
-        mimetype: mimeType,
-        fileLength: mediaBuffer.length.toString(),
-        caption: caption,
-      },
-    });
-
-    await client.relayMessage('status@broadcast', message, {
-      messageId: id,
-    });
-
-    return id;
+    const result = await client.sendMessage('status@broadcast', payload);
+    return result?.key?.id || `status_${Date.now()}`;
   }
 
   isConnected(agentId: string): boolean {

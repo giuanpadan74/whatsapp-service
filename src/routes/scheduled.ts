@@ -15,8 +15,9 @@ const scheduledConfigs: Map<string, any> = new Map();
 const scheduledStatus: Map<string, any> = new Map();
 
 router.post('/send', upload.single('media'), async (req: Request, res: Response) => {
+  const agentId = String((req.body as any)?.agentId ?? '');
   try {
-    const { agentId, caption } = req.body;
+    const caption = (req.body as any)?.caption as string | undefined;
     const file = req.file;
 
     if (!agentId) {
@@ -59,7 +60,7 @@ router.post('/send', upload.single('media'), async (req: Request, res: Response)
 
 router.get('/status/:agentId', async (req: Request, res: Response) => {
   try {
-    const { agentId } = req.params;
+    const agentId = String((req.params as any).agentId ?? '');
     
     let status = scheduledStatus.get(agentId);
     
@@ -85,7 +86,14 @@ router.get('/status/:agentId', async (req: Request, res: Response) => {
 
 router.post('/config', async (req: Request, res: Response) => {
   try {
-    const { agentId, enabled, time, timezone, watchFolder, captionTemplate, autoDelete } = req.body;
+    const body = req.body as any;
+    const agentId = String(body?.agentId ?? '');
+    const enabled = body?.enabled as boolean | undefined;
+    const time = body?.time as string | undefined;
+    const timezone = body?.timezone as string | undefined;
+    const watchFolder = body?.watchFolder as string | undefined;
+    const captionTemplate = body?.captionTemplate as string | undefined;
+    const autoDelete = body?.autoDelete as boolean | undefined;
 
     if (!agentId) {
       return res.status(400).json({ error: 'agentId è richiesto' });
@@ -113,7 +121,7 @@ router.post('/config', async (req: Request, res: Response) => {
 
 router.get('/config/:agentId', async (req: Request, res: Response) => {
   try {
-    const { agentId } = req.params;
+    const agentId = String((req.params as any).agentId ?? '');
     
     let config = scheduledConfigs.get(agentId);
     

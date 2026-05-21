@@ -7,7 +7,9 @@ const router = Router();
 
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const { agentId, agentName } = req.body;
+    const body = req.body as any;
+    const agentId = String(body?.agentId ?? '');
+    const agentName = String(body?.agentName ?? '');
 
     if (!agentId || !agentName) {
       return res.status(400).json({ error: 'agentId e agentName sono richiesti' });
@@ -32,7 +34,7 @@ router.post('/', async (req: Request, res: Response) => {
 
 router.get('/:sessionId/qr', async (req: Request, res: Response) => {
   try {
-    const { sessionId } = req.params;
+    const sessionId = String((req.params as any).sessionId ?? '');
     const session = sessionStore.getSession(sessionId);
 
     if (!session) {
@@ -43,12 +45,14 @@ router.get('/:sessionId/qr', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'session_not_waiting_qr' });
     }
 
-    const expiresAt = new Date(Date.now() + config.qrCodeExpirationMs).toISOString();
-    const placeholderQr = 'data:image/png;base64,';
+    const currentQr = waClientManager.getQRCode(sessionId);
+    if (!currentQr) {
+      return res.status(404).json({ error: 'qr_not_available' });
+    }
 
     res.json({
-      qrCode: placeholderQr,
-      expiresAt,
+      qrCode: currentQr.qrCode,
+      expiresAt: currentQr.expiresAt,
     });
   } catch (error) {
     console.error('[Sessions] Errore QR:', error);
@@ -58,7 +62,7 @@ router.get('/:sessionId/qr', async (req: Request, res: Response) => {
 
 router.get('/:agentId', async (req: Request, res: Response) => {
   try {
-    const { agentId } = req.params;
+    const agentId = String((req.params as any).agentId ?? '');
     const session = sessionStore.getSessionByAgentId(agentId);
 
     if (!session) {
@@ -82,7 +86,7 @@ router.get('/:agentId', async (req: Request, res: Response) => {
 
 router.delete('/:agentId', async (req: Request, res: Response) => {
   try {
-    const { agentId } = req.params;
+    const agentId = String((req.params as any).agentId ?? '');
     const session = sessionStore.getSessionByAgentId(agentId);
 
     if (!session) {
