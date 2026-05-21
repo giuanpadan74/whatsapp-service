@@ -1,4 +1,29 @@
 import path from 'path';
+import type { CorsOptions } from 'cors';
+
+function buildCorsOptions(): CorsOptions {
+  const raw = String(process.env.CORS_ORIGIN || '').trim();
+  if (!raw || raw === '*') {
+    return {
+      origin: true,
+      credentials: true,
+    };
+  }
+
+  const allowed = raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  return {
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true);
+      if (allowed.includes(origin)) return cb(null, true);
+      return cb(new Error('cors_not_allowed'));
+    },
+    credentials: true,
+  };
+}
 
 export const config = {
   port: parseInt(process.env.PORT || '3001', 10),
@@ -11,10 +36,7 @@ export const config = {
     uploads: path.join(process.cwd(), 'uploads'),
   },
   
-  cors: {
-    origin: process.env.CORS_ORIGIN || '*',
-    credentials: true,
-  },
+  cors: buildCorsOptions(),
   
   qrCodeExpirationMs: 60000,
   
