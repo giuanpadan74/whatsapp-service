@@ -1,0 +1,29 @@
+{
+  "name": "whatsapp-service",
+  "version": "1.0.0",
+  "description": "WhatsApp Status Automation Service",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.17.16",
+    "express": "^5.1.0",
+    "cors": "^2.8.5",
+    "multer": "^1.4.5-lts.2",
+    "qrcode": "^1.5.4",
+    "uuid": "^11.0.0",
+    "@hapi/boom": "^10.0.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/multer": "^1.4.12",
+    "@types/qrcode": "^1.5.5",
+    "@types/uuid": "^10.0.0",
+    "@types/cors": "^2.8.17",
+    "typescript": "^5.8.2",
+    "tsx": "^4.20.6"
+  }
+}
